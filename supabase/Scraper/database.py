@@ -108,6 +108,40 @@ def get_engine():
             "❌ DATABASE_URL غير موجود! "
             "ضيفه في .env أو GitHub Secrets."
         )
+
+    # ──────────────────────────────────────────────
+    # AUTOMATIC FIX FOR CONNECTION STRINGS
+    # ──────────────────────────────────────────────
+    try:
+        from urllib.parse import urlparse, parse_qs, quote_plus
+
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+        # Fix password encoding if user forgot (detect # in password part)
+        # This is tricky without parsing, but we can try simple heuristic
+        if "@" in database_url:
+            parts = database_url.split("@")
+            credentials = parts[0]
+            if ":" in credentials:
+                user_pass = credentials.split(":")
+                if len(user_pass) > 2: # Password likely contains :
+                    pass
+                elif "#" in user_pass[-1] and "%23" not in user_pass[-1]:
+                     # User put raw # in password
+                     c_part = credentials.replace("#", "%23")
+                     database_url = c_part + "@" + parts[1]
+
+        # Fix Supabase Pooler Username (postgres -> postgres.[ref])
+        if "pooler.supabase.com" in database_url and "gypchbvcqooeloymonsk" not in database_url and "postgres." not in database_url:
+             # Inject project ref into username for pooler
+             database_url = database_url.replace("postgres:", "postgres.gypchbvcqooeloymonsk:")
+             logger.info("🔧 تم تصحيح اسم المستخدم لـ Pooler تلقائياً")
+
+    except Exception as e:
+        logger.warning(f"⚠️ فشل التصحيح التلقائي للرابط: {e}")
+
+    # Create engine
     return create_engine(database_url, pool_pre_ping=True, echo=False)
 
 
@@ -231,8 +265,8 @@ def upsert_match(session: Session, match_data: dict) -> bool:
         text("""
             SELECT id FROM public.matches
             WHERE home_team_id = :home_id
-              AND away_team_id = :away_id
-              AND start_time::date = :match_date
+            AND away_team_id = :away_id
+            AND start_time::date = :match_date
             LIMIT 1
         """),
         {

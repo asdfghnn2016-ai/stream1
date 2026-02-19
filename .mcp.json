@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "supabase": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-supabase"
+            ],
+            "env": {
+                "SUPABASE_SERVICE_ROLE_KEY": "sbp_980084508de818c77cfbea76e3ee74805b555c49",
+                "SUPABASE_URL": "https://gypchbvcqooeloymonsk.supabase.co"
+            }
+        }
+    }
+}

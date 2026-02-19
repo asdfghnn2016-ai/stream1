@@ -1,0 +1,38 @@
+name: Scrape Live Scores
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Run every 5 minutes
+  workflow_dispatch:      # Allow manual trigger
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-kora:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10   # Safety timeout
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install dependencies
+      working-directory: ./supabase/Scraper
+      run: |
+        pip install -r requirements.txt
+        playwright install chromium
+
+    - name: Run Scraper Loop
+      working-directory: ./supabase/Scraper
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      run: |
+        # Run scraper (loop for ~4m40s)
+        python scraper.py

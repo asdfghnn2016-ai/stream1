@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'controllers/settings_controller.dart';
+import 'providers/matches_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 
@@ -29,7 +30,10 @@ void main() async {
 
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => SettingsController())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => SettingsController()),
+        ChangeNotifierProvider(create: (_) => MatchesProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -172,7 +176,7 @@ class _SplashWelcomeScreenState extends State<SplashWelcomeScreen>
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
                           colors: [
-                            Colors.white.withOpacity(0.05),
+                            Colors.white.withValues(alpha: 0.05),
                             Colors.transparent,
                           ],
                           radius: 0.8,

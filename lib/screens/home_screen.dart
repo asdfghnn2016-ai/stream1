@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../providers/matches_provider.dart';
+// Re-added import
 
-import '../models/match_model.dart';
-import '../models/team_model.dart';
-import '../models/player_model.dart';
-import '../services/supabase_service.dart';
 import '../widgets/hero_carousel.dart';
 import 'match_details_screen.dart';
 import 'matches_schedule_screen.dart';
@@ -15,7 +14,6 @@ import 'settings_screen.dart';
 import 'news_screen.dart';
 import 'standings_screen.dart';
 import '../widgets/search_overlay.dart'; // Import SearchOverlay
-import 'dart:async';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,7 +34,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.black, // Dark background
+      // Only show AppBar for Home Tab if needed, or customize per tab
       appBar: _selectedIndex == 0
           ? AppBar(
               title: Text(
@@ -65,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
               systemOverlayStyle: SystemUiOverlayStyle.light,
             )
-          : null,
+          : null, // Hide AppBar for other tabs if they have their own
       body: IndexedStack(
         index: _selectedIndex,
         children: const [
@@ -81,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: Colors.black,
           boxShadow: [
             BoxShadow(
-              color: Colors.white.withOpacity(0.05),
+              color: Colors.white.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -5),
             ),
@@ -107,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'الرئيسية',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.sports_soccer),
+              icon: Icon(Icons.calendar_month),
               label: 'المباريات',
             ),
             BottomNavigationBarItem(
@@ -119,8 +118,8 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'الترتيب',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              label: 'حسابي',
+              icon: Icon(Icons.settings),
+              label: 'الإعدادات',
             ),
           ],
         ),
@@ -138,17 +137,14 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   final ScrollController _scrollController = ScrollController();
-
-  // Data State
-  List<Match> _matches = [];
-  List<Match> _featuredMatches = [];
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
+  final bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<MatchesProvider>(context, listen: false).fetchHomeData();
+    });
     _scrollController.addListener(_onScroll);
   }
 
@@ -159,133 +155,36 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   void _onScroll() {
+    // Basic pagination trigger (though provider currently fetches all)
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore) {
-      _loadMoreMatches();
+      // _loadMoreMatches(); // Implement pagination later
     }
-  }
-
-  Future<void> _loadInitialData() async {
-    try {
-      final api = SupabaseService.instance;
-
-      // Fetch live matches for carousel and today's matches
-      final liveData = await api.getLiveMatches();
-      final todayData = await api.getMatchesByDate(DateTime.now());
-
-      if (mounted) {
-        setState(() {
-          _featuredMatches = liveData
-              .map((json) => Match.fromJson(json))
-              .toList();
-          _matches = todayData.map((json) => Match.fromJson(json)).toList();
-
-          // If no featured matches from Supabase, use first 3 from today
-          if (_featuredMatches.isEmpty && _matches.isNotEmpty) {
-            _featuredMatches = _matches.take(3).toList();
-          }
-
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      // Fallback to mock data
-      if (mounted) {
-        setState(() {
-          _featuredMatches = _generateMockMatches(3, upcoming: false);
-          _matches = _generateMockMatches(10);
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadMoreMatches() async {
-    if (_isLoadingMore) return;
-    setState(() => _isLoadingMore = true);
-
-    // For now, no pagination from Supabase — just end the loading
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (mounted) {
-      setState(() {
-        _isLoadingMore = false;
-      });
-    }
-  }
-
-  List<Match> _generateMockMatches(int count, {bool upcoming = true}) {
-    final now = DateTime.now();
-    return List.generate(count, (index) {
-      final isLive = !upcoming || (index % 4 == 0); // Mixed live/upcoming
-
-      return Match(
-        id: 'm_$index',
-        homeTeam: Team(
-          id: 'h_$index',
-          name: 'Home Team $index',
-          logoUrl: 'https://placeholder.com/logo.png',
-        ),
-        awayTeam: Team(
-          id: 'a_$index',
-          name: 'Away Team $index',
-          logoUrl: 'https://placeholder.com/logo.png',
-        ),
-        matchTime: now.add(Duration(hours: index * 2)),
-        league: index % 2 == 0 ? 'Premier League' : 'La Liga',
-        isLive: isLive,
-        score: isLive ? '1 - 0' : null,
-        venue: 'Stadium $index',
-        referee: 'Referee $index',
-        channel: 'Channel $index',
-        commentator: 'Commentator $index',
-        round: 'Round $index',
-        status: isLive ? 'Live' : 'Upcoming',
-        homeLineup: List.generate(
-          11,
-          (pIndex) => Player(
-            id: 'h_p$pIndex',
-            name: pIndex == 0 ? 'GK Home' : 'Player $pIndex',
-            number: pIndex == 0 ? 1 : pIndex + 1,
-            photoUrl: '',
-            position: pIndex == 0 ? 'GK' : 'PL',
-            isCaptain: pIndex == 10,
-          ),
-        ),
-        awayLineup: List.generate(
-          11,
-          (pIndex) => Player(
-            id: 'a_p$pIndex',
-            name: pIndex == 0 ? 'GK Away' : 'Player $pIndex',
-            number: pIndex == 0 ? 1 : pIndex + 1,
-            photoUrl: '',
-            position: pIndex == 0 ? 'GK' : 'PL',
-            isCaptain: pIndex == 10,
-          ),
-        ),
-        homeFormation: '4-4-2',
-        awayFormation: '4-3-3',
-      );
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return _isLoading
+    final matchesProvider = Provider.of<MatchesProvider>(context);
+
+    return matchesProvider.isHomeLoading
         ? Center(child: _buildShimmerList())
         : RefreshIndicator(
-            onRefresh: _loadInitialData,
+            onRefresh: () async {
+              await matchesProvider.fetchHomeData();
+            },
             color: const Color(0xFF16C47F),
             backgroundColor: Colors.grey[900],
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
-                // Hero Section
+                // Hero Section (Featured/Live Matches)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.only(top: 16, bottom: 24),
-                    child: HeroCarousel(featuredMatches: _featuredMatches),
+                    child: HeroCarousel(
+                      featuredMatches: matchesProvider.liveMatches,
+                    ),
                   ),
                 ),
 
@@ -307,23 +206,36 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ),
 
-                // Matches List
-                SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                MatchDetailsScreen(match: _matches[index]),
+                // Matches List (Today's Matches)
+                matchesProvider.todayMatches.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Center(
+                            child: Text(
+                              "لا توجد مباريات اليوم",
+                              style: GoogleFonts.cairo(color: Colors.white54),
+                            ),
                           ),
-                        );
-                      },
-                      child: MatchCard(match: _matches[index]),
-                    );
-                  }, childCount: _matches.length),
-                ),
+                        ),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final match = matchesProvider.todayMatches[index];
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      MatchDetailsScreen(match: match),
+                                ),
+                              );
+                            },
+                            child: MatchCard(match: match),
+                          );
+                        }, childCount: matchesProvider.todayMatches.length),
+                      ),
 
                 // Loading Spinner at bottom
                 if (_isLoadingMore)

@@ -3,12 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/match_model.dart';
-import '../models/team_model.dart';
-import '../services/supabase_service.dart';
-
 import '../widgets/calendar_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 import '../controllers/settings_controller.dart';
+import '../providers/matches_provider.dart';
 import 'match_details_screen.dart';
 
 class MatchesScheduleScreen extends StatefulWidget {
@@ -20,105 +18,27 @@ class MatchesScheduleScreen extends StatefulWidget {
 
 class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
   DateTime _selectedDate = DateTime.now();
-  List<Match> _allMatches = []; // Store raw list
-
-  // Grouped matches for display
-  final Map<String, List<Match>> _displayMatches = {};
 
   @override
   void initState() {
     super.initState();
-    _loadMatchesForDate();
-  }
-
-  Future<void> _loadMatchesForDate() async {
-    try {
-      final data = await SupabaseService.instance.getMatchesByDate(
-        _selectedDate,
-      );
-      _allMatches = data.map((json) => Match.fromJson(json)).toList();
-    } catch (e) {
-      // Fallback to mock data
-      _allMatches = List.generate(10, (index) {
-        return Match(
-          id: 's_$index',
-          homeTeam: Team(
-            id: 'h$index',
-            name: 'Home Team $index',
-            logoUrl: 'https://placeholder.com/logo.png',
-          ),
-          awayTeam: Team(
-            id: 'a$index',
-            name: 'Away Team $index',
-            logoUrl: 'https://placeholder.com/logo.png',
-          ),
-          matchTime: _selectedDate.add(Duration(hours: 18 + index)),
-          league: index < 3
-              ? 'دوري أبطال أوروبا'
-              : (index < 6 ? 'الدوري الإنجليزي' : 'الدوري السعودي'),
-          isLive: index == 0,
-          score: index == 0 ? '1 - 1' : null,
-          venue: 'Stadium $index',
-          referee: 'Referee $index',
-          channel: 'BeIN Sports',
-          commentator: 'Commentator $index',
-          round: 'Group Stage',
-          status: index == 0 ? 'Live' : 'Upcoming',
-          homeLineup: [],
-          awayLineup: [],
-          homeFormation: '4-3-3',
-          awayFormation: '4-4-2',
-        );
-      });
-    }
-
-    if (mounted) {
-      _applyFilters(Provider.of<SettingsController>(context, listen: false));
-      setState(() {});
-    }
-  }
-
-  void _applyFilters(SettingsController settings) {
-    String sortOrder = settings.matchSortOrder;
-    List<Match> filtered = List.from(_allMatches);
-
-    // 1. Filter
-    if (sortOrder == 'important') {
-      // Mock importance: Only Champions League
-      filtered = filtered
-          .where((m) => m.league == 'دوري أبطال أوروبا')
-          .toList();
-    } else if (sortOrder == 'favorite') {
-      // Mock favorite: Even indices
-      filtered = filtered
-          .where((m) => int.parse(m.id.split('_')[1]) % 2 == 0)
-          .toList();
-    }
-
-    // 2. Sort/Group
-    _displayMatches.clear();
-    if (sortOrder == 'time') {
-      filtered.sort((a, b) => a.matchTime.compareTo(b.matchTime));
-      if (filtered.isNotEmpty) {
-        _displayMatches['كل المباريات'] = filtered;
-      }
-    } else {
-      // Default: By Tournament (already broadly sorted by ID structure, but let's group)
-      for (var match in filtered) {
-        if (!_displayMatches.containsKey(match.league)) {
-          _displayMatches[match.league] = [];
-        }
-        _displayMatches[match.league]!.add(match);
-      }
-    }
-    setState(() {});
+    // Fetch initial data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<MatchesProvider>(
+        context,
+        listen: false,
+      ).fetchMatchesForDate(_selectedDate);
+    });
   }
 
   void _onDateSelected(DateTime date) {
     setState(() {
       _selectedDate = date;
     });
-    _loadMatchesForDate();
+    Provider.of<MatchesProvider>(
+      context,
+      listen: false,
+    ).fetchMatchesForDate(date);
   }
 
   void _showCalendar() {
@@ -135,20 +55,18 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to settings changes
+    // Listen to provider and settings
+    final matchesProvider = Provider.of<MatchesProvider>(context);
     final settings = Provider.of<SettingsController>(context);
 
-    // Re-apply filters when settings change (efficiently)
-    // Note: This might loop if not careful, but since build is called on notifyListeners,
-    // and _applyFilters calls setState, we should be careful.
-    // Better strategy: Just recalculate display map in build or use a Memoized approach.
-    // For simplicity in this fix, I will recalculate logic here without setState loops,
-    // or better, extract grouping logic to a helper that returns the map.
-
-    Map<String, List<Match>> currentMatches = _getProcessedMatches(settings);
+    // Process matches from provider
+    Map<String, List<Match>> currentMatches = _getProcessedMatches(
+      matchesProvider.matches,
+      settings,
+    );
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Use Theme
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
@@ -183,26 +101,40 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
         children: [
           _buildDateSelector(),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 24, top: 16),
-              itemCount: currentMatches.keys.length,
-              itemBuilder: (context, index) {
-                String league = currentMatches.keys.elementAt(index);
-                List<Match> matches = currentMatches[league]!;
-                return _buildLeagueSection(league, matches);
-              },
-            ),
+            child: matchesProvider.isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF16C47F)),
+                  )
+                : currentMatches.isEmpty
+                ? Center(
+                    child: Text(
+                      "لا توجد مباريات لهذا اليوم",
+                      style: GoogleFonts.cairo(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24, top: 16),
+                    itemCount: currentMatches.keys.length,
+                    itemBuilder: (context, index) {
+                      String league = currentMatches.keys.elementAt(index);
+                      List<Match> matches = currentMatches[league]!;
+                      return _buildLeagueSection(league, matches);
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Map<String, List<Match>> _getProcessedMatches(SettingsController settings) {
-    if (_allMatches.isEmpty) return {};
+  Map<String, List<Match>> _getProcessedMatches(
+    List<Match> allMatches,
+    SettingsController settings,
+  ) {
+    if (allMatches.isEmpty) return {};
 
     String sortOrder = settings.matchSortOrder;
-    List<Match> filtered = List.from(_allMatches);
+    List<Match> filtered = List.from(allMatches);
 
     // Filter
     if (sortOrder == 'important') {
@@ -210,9 +142,9 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
           .where((m) => m.league == 'دوري أبطال أوروبا')
           .toList();
     } else if (sortOrder == 'favorite') {
-      filtered = filtered
-          .where((m) => int.parse(m.id.split('_')[1]) % 2 == 0)
-          .toList();
+      // Logic for favorites would need actual IDs, usually this is complex
+      // For now, keeping simple or removing if not implemented
+      filtered = filtered;
     }
 
     // Sort/Group
@@ -265,7 +197,7 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF16C47F).withOpacity(0.4),
+                          color: const Color(0xFF16C47F).withValues(alpha: 0.4),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -361,9 +293,9 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
         decoration: BoxDecoration(
           color: const Color(
             0xFF1E2433,
-          ).withOpacity(0.8), // Glass-like background
+          ).withValues(alpha: 0.8), // Glass-like background
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
         ),
         child: Row(
           children: [
@@ -403,9 +335,11 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
                       ),
                       margin: const EdgeInsets.only(bottom: 6),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
+                        color: Colors.red.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.red.withOpacity(0.5)),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.5),
+                        ),
                       ),
                       child: Text(
                         "LIVE",
@@ -474,7 +408,7 @@ class _MatchesScheduleScreenState extends State<MatchesScheduleScreen> {
       height: 40,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         shape: BoxShape.circle,
       ),
       child: CachedNetworkImage(

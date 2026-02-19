@@ -10,16 +10,13 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine,
     Column,
-    String,
     Integer,
     Boolean,
     DateTime,
-    Numeric,
     Text,
-    ARRAY,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, insert
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 logger = logging.getLogger(__name__)
